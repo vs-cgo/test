@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"golang.org/x/image/bmp"
 	"image"
@@ -28,19 +29,30 @@ type User struct {
 }
 
 type Data struct {
-	Info  [][]string
-	Mutex sync.Mutex
+	Info    [][]string
+	Address string
+	Mutex   sync.Mutex
 }
 
 var data Data
 
+func init() {
+	flag.StringVar(&data.Address, "U", "", "host:port [127.0.0.1:8888]")
+	flag.Parse()
+}
 func main() {
+	if data.Address == "" {
+		flag.Usage()
+		return
+	}
+
 	a := app.New()
 	w := a.NewWindow("Server")
 	w.SetOnClosed(func() {
 		a.Quit()
 	})
-	server := http.Server{Addr: ":8888", Handler: nil}
+	// need host:port to start server
+	server := http.Server{Addr: data.Address, Handler: nil}
 	go startServer(&server)
 	settingWindow(&w, a)
 
@@ -126,12 +138,25 @@ func addUserHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data.Mutex.Lock()
-	data.Info = append(data.Info,
-		[]string{u.Domain, u.Mashine, u.IP, u.User, time.Now().Format("02.01.2006 15:04:05")})
+	upd := true
+	for i := 0; i < len(data.Info); i++ {
+		if data.Info[i][2] == u.IP {
+			data.Info[i][0] = u.Domain
+			data.Info[i][1] = u.Mashine
+			data.Info[i][3] = u.User
+			data.Info[i][4] = time.Now().Format("02.01.2006 15:04:05")
+			upd = false
+			break
+		}
+	}
+	if upd {
+		data.Info = append(data.Info, []string{u.Domain, u.Mashine, u.IP,
+			u.User, time.Now().Format("02.01.2006 15:04:05")})
+	}
 	data.Mutex.Unlock()
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("200 OK"))
+	w.Write([]byte("200 OK ghbdrnt"))
 }
 
 func update(t *widget.Table) {
@@ -180,7 +205,7 @@ func getImage(url string) *canvas.Image {
 	defer res.Body.Close()
 
 	fimg := canvas.NewImageFromImage(ret)
-	fimg.SetMinSize(fyne.NewSize(600, 600))
+	//fimg.SetMinSize(fyne.NewSize(600, 600))
 	fimg.FillMode = canvas.ImageFillOriginal
 	return fimg
 }

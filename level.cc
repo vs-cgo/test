@@ -9,7 +9,9 @@
 #include <mutex>
 #include <sstream>
 
-
+#define SERVER_ADDR "10.10.10.72"
+#define SERVER_PORT 8888
+#define CLIENT_ADDR 2
 //#pragma comment(lib, "ws2_32.lib")
 
 class HttpServer {
@@ -38,10 +40,10 @@ private:
         // Настройка адреса сервера
         sockaddr_in serverAddress;
         serverAddress.sin_family = AF_INET;
-        serverAddress.sin_port = htons(port);
         serverAddress.sin_addr.s_addr = INADDR_ANY;
-        
-        // Связывание сокета с адресом
+				serverAddress.sin_port = htons(port);
+				
+				// Связывание сокета с адресом
         if (bind(listenSocket, (SOCKADDR*)&serverAddress, sizeof(serverAddress)) == SOCKET_ERROR) {
             std::cerr << "Ошибка bind: " << WSAGetLastError() << std::endl;
             closesocket(listenSocket);
@@ -131,8 +133,8 @@ private:
 			}
 			sockaddr_in clientService;
 			clientService.sin_family = AF_INET;
-			clientService.sin_addr.s_addr = inet_addr("10.10.10.72");
-			clientService.sin_port = htons(8888);
+			clientService.sin_addr.s_addr = inet_addr(SERVER_ADDR);
+			clientService.sin_port = htons(SERVER_PORT);
 			
 			iResult = connect(ConnectSocket, (SOCKADDR *) & clientService, sizeof (clientService));
 			if (iResult == SOCKET_ERROR) {
@@ -144,12 +146,21 @@ private:
         return false;
 			}
 			std::string request("POST /adduser HTTP/1.1\r\n");
-      request += "Host: 10.10.10.72\r\n";
+      request += std::string("Host: ") + SERVER_ADDR + "\r\n";
       request += "Content-Type: application/json\r\n";
       request += "Content-Length: " + std::to_string(m.size()) + "\r\n";
       request += "Connection: close\r\n\r\n";
       request += m;
 			int bsent = send(ConnectSocket, request.c_str(), request.size(), 0);
+			/*
+			char answer[1024];
+			int bytesReceives = recv(ConnectSocket, answer, sizeof(answer), 0);
+			std::string receive(answer, answer + bytesReceives);
+			if (receive.find("not found")) {
+				closesocket(ConnectSocket);
+				return false;
+			}
+			*/
 			iResult = closesocket(ConnectSocket);
 			if (iResult == SOCKET_ERROR) {
 				std::cerr << "closesocket function failed with error: " << WSAGetLastError() << std::endl;
@@ -163,6 +174,7 @@ private:
 		
 		std::vector<char> getImage()  {
 			BITMAPINFO bmi;
+			SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE);
 			int width  = GetSystemMetrics(SM_CXSCREEN);
 			int height = GetSystemMetrics(SM_CYSCREEN);
 			
@@ -220,7 +232,6 @@ private:
 			bm->biCompression = BI_RGB;
 			bm->biSizeImage = width * height * 4;
 			memcpy(ret.data() + bfh->bfOffBits, bitmapData, width * height * 4);
-			//std::vector<char> ret(bitmapData, bitmapData+ width * height * 4);
 			delete [] bitmapData;
 			return ret;
 		}
@@ -243,19 +254,33 @@ public:
 				
 				//get ip
 				hostent *host = gethostbyname(buffer);
-				ip = std::string(inet_ntoa(*(struct in_addr *)*host->h_addr_list));
-				//ip = std::string(inet_ntoa(*(struct in_addr *)host->h_addr_list[2]));
+				std::vector<std::string> list;
+				for (char **temp = host->h_addr_list; ((in_addr *)*temp) != NULL; ++temp) {
+					list.push_back(std::string(inet_ntoa(*(in_addr *)temp[0])));
+				}
+				ip = list[CLIENT_ADDR];
+				//ip = std::string(inet_ntoa(*(struct in_addr *)host->h_addr_list[0]));
+
 				// get user
 				DWORD username_len = 1024;
 				GetUserName(buffer, &username_len);
 				user = std::string(buffer);
-				
-				std::string m = "{\"domain\":\"test\",\"mashine\":\"" + machine + "\",\"ip\":\"" + ip + "\",\"user\":\"" + user + "\"}";
+
+				std::string m = "{\"domain\":\"test\",\"mashine\":\"" + machine
+				+ "\",\"ip\":\"" + ip + "\",\"user\":\"" + user + "\"}";
+
+				/*for (std::string &s : list) {
+					std::string m = "{\"domain\":\"test\",\"mashine\":\"" + machine
+					+ "\",\"ip\":\"" + s + "\",\"user\":\"" + user + "\"}";
+					if (sendMessage(m)) {
+						ip = s;
+						break;
+					}
+				}*/
 				if (!sendMessage(m)) {
 					return;
 				}
         startListening();
-				
     }
     
     ~HttpServer() {
