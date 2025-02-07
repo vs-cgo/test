@@ -20,52 +20,52 @@ private:
     std::mutex clientMutex;
 		std::string machine, ip, user;
 		//HBITMAP hBitmap;
-    // РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ WinSock
+    // Инициализация WinSock
     bool initWinSock() {
         int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
         return result == 0;
     }
 
-    // РќР°СЃС‚СЂРѕР№РєР° СЃРµСЂРІРµСЂРЅРѕРіРѕ СЃРѕРєРµС‚Р°
+    // Настройка серверного сокета
     bool setupServerSocket(int port) {
-        // РЎРѕР·РґР°РЅРёРµ СЃРѕРєРµС‚Р° РґР»СЏ РїСЂРѕСЃР»СѓС€РёРІР°РЅРёСЏ
+        // Создание сокета для прослушивания
         listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         if (listenSocket == INVALID_SOCKET) {
-            std::cerr << "РћС€РёР±РєР° СЃРѕР·РґР°РЅРёСЏ СЃРѕРєРµС‚Р°: " << WSAGetLastError() << std::endl;
+            std::cerr << "Ошибка создания сокета: " << WSAGetLastError() << std::endl;
             return false;
         }
         
-        // РќР°СЃС‚СЂРѕР№РєР° Р°РґСЂРµСЃР° СЃРµСЂРІРµСЂР°
+        // Настройка адреса сервера
         sockaddr_in serverAddress;
         serverAddress.sin_family = AF_INET;
         serverAddress.sin_port = htons(port);
         serverAddress.sin_addr.s_addr = INADDR_ANY;
         
-        // РЎРІСЏР·С‹РІР°РЅРёРµ СЃРѕРєРµС‚Р° СЃ Р°РґСЂРµСЃРѕРј
+        // Связывание сокета с адресом
         if (bind(listenSocket, (SOCKADDR*)&serverAddress, sizeof(serverAddress)) == SOCKET_ERROR) {
-            std::cerr << "РћС€РёР±РєР° bind: " << WSAGetLastError() << std::endl;
+            std::cerr << "Ошибка bind: " << WSAGetLastError() << std::endl;
             closesocket(listenSocket);
             return false;
         }
         
-        // РќР°С‡Р°Р»Рѕ РїСЂРѕСЃР»СѓС€РёРІР°РЅРёСЏ
+        // Начало прослушивания
         if (listen(listenSocket, SOMAXCONN) == SOCKET_ERROR) {
-            std::cerr << "РћС€РёР±РєР° listen: " << WSAGetLastError() << std::endl;
+            std::cerr << "Ошибка listen: " << WSAGetLastError() << std::endl;
             closesocket(listenSocket);
             return false;
         }
         return true;
     }
     
-    // РћР±СЂР°Р±РѕС‚РєР° РєР»РёРµРЅС‚СЃРєРѕРіРѕ РїРѕРґРєР»СЋС‡РµРЅРёСЏ
+    // Обработка клиентского подключения
     void handleClient() {
         std::vector<char> buffer(4096);
         std::string request;
         
-        // РџРѕР»СѓС‡РµРЅРёРµ РґР°РЅРЅС‹С… РѕС‚ РєР»РёРµРЅС‚Р°
+        // Получение данных от клиента
         int bytesReceived = recv(clientSocket, buffer.data(), buffer.size(), 0);
         if (bytesReceived <= 0) {
-            std::cerr << "РћС€РёР±РєР° РїСЂРё РїРѕР»СѓС‡РµРЅРёРё РґР°РЅРЅС‹С…" << std::endl;
+            std::cerr << "Ошибка при получении данных" << std::endl;
             return;
         }
         
@@ -77,7 +77,7 @@ private:
 				DWORD currentTime = GetTickCount();
 				DWORD duration = (currentTime - last_input.dwTime) / 1000;
 
-        // РџСЂРѕРІРµСЂРєР° Р·Р°РїСЂРѕСЃР° РЅР° /ping
+        // Проверка запроса на /ping
         if (request.find("/ping") != std::string::npos && ok && duration < 10) {
           std::string response = "HTTP/1.1 200 OK\r\nContent-Length: 34\r\n\r\n" + machine + " " + ip + "" + user;
           send(clientSocket, response.c_str(), response.length(), 0);
@@ -97,18 +97,18 @@ private:
         closesocket(clientSocket);
     }
     
-    // РћСЃРЅРѕРІРЅРѕР№ С†РёРєР» РѕР±СЂР°Р±РѕС‚РєРё РїРѕРґРєР»СЋС‡РµРЅРёР№
+    // Основной цикл обработки подключений
     void startListening() {
-        std::cout << "РЎРµСЂРІРµСЂ Р·Р°РїСѓС‰РµРЅ. РћР¶РёРґР°РЅРёРµ РїРѕРґРєР»СЋС‡РµРЅРёР№..." << std::endl;
+        std::cout << "Сервер запущен. Ожидание подключений..." << std::endl;
         
         while (true) {
             clientSocket = accept(listenSocket, NULL, NULL);
             if (clientSocket == INVALID_SOCKET) {
-                std::cerr << "РћС€РёР±РєР° accept: " << WSAGetLastError() << std::endl;
+                std::cerr << "Ошибка accept: " << WSAGetLastError() << std::endl;
                 continue;
             }
             
-            // РЎРѕР·РґР°РЅРёРµ РЅРѕРІРѕРіРѕ РїРѕС‚РѕРєР° РґР»СЏ РѕР±СЂР°Р±РѕС‚РєРё РєР»РёРµРЅС‚Р°
+            // Создание нового потока для обработки клиента
             std::thread clientThread(&HttpServer::handleClient, this);
             clientThread.detach();
         }
@@ -228,12 +228,12 @@ private:
 public:
     HttpServer(int port) {
         if (!initWinSock()) {
-            throw std::runtime_error("РћС€РёР±РєР° РёРЅРёС†РёР°Р»РёР·Р°С†РёРё WinSock");
+            throw std::runtime_error("Ошибка инициализации WinSock");
         }
         
         if (!setupServerSocket(port)) {
             WSACleanup();
-            throw std::runtime_error("РћС€РёР±РєР° РЅР°СЃС‚СЂРѕР№РєРё СЃРµСЂРІРµСЂРЅРѕРіРѕ СЃРѕРєРµС‚Р°");
+            throw std::runtime_error("Ошибка настройки серверного сокета");
         }
 				
 				char buffer[1024];
@@ -244,7 +244,7 @@ public:
 				//get ip
 				hostent *host = gethostbyname(buffer);
 				ip = std::string(inet_ntoa(*(struct in_addr *)*host->h_addr_list));
-				ip = std::string(inet_ntoa(*(struct in_addr *)host->h_addr_list[2]));
+				//ip = std::string(inet_ntoa(*(struct in_addr *)host->h_addr_list[2]));
 				// get user
 				DWORD username_len = 1024;
 				GetUserName(buffer, &username_len);
@@ -270,7 +270,7 @@ int main() {
     try {
         HttpServer server(7777);
     } catch (const std::exception& e) {
-        std::cerr << "РћС€РёР±РєР°: " << e.what() << std::endl;
+        std::cerr << "Ошибка: " << e.what() << std::endl;
         return 1;
     }
     return 0;
